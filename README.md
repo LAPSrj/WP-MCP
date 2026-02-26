@@ -1,4 +1,4 @@
-# wp-mcp
+# WP-MCP
 
 MCP server that wraps the WordPress REST JSON API. It dynamically discovers all available routes from your WordPress site and exposes each as an MCP tool.
 
