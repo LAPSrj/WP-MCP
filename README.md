@@ -73,7 +73,3 @@ On startup the server fetches the WordPress REST API index at `WP_URL/wp-json`, 
 The `wp/v2/` prefix is stripped from core routes for cleaner names. Plugin namespaces are preserved to avoid collisions.
 
 Every tool accepts a required `method` parameter (enum of the HTTP methods that route supports) plus the route's own arguments as additional parameters.
-
-## License
-
-[PolyForm Strict 1.0.0](LICENSE.md) - Copyright (c) 2026 Leandro Amorim
