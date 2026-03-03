@@ -84,6 +84,21 @@ function sanitizeItems(items: unknown): Record<string, unknown> | undefined {
   return result;
 }
 
+const VALID_PROPERTY_KEY = /^[a-zA-Z0-9_.-]{1,64}$/;
+
+function sanitizePropertyKey(key: string): string {
+  // Replace brackets like filter[key] with filter.key
+  let sanitized = key.replace(/\[/g, ".").replace(/\]/g, "");
+  // Replace any remaining invalid characters with underscore
+  sanitized = sanitized.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  // Collapse consecutive underscores/dots
+  sanitized = sanitized.replace(/[_.]{2,}/g, "_");
+  // Trim leading/trailing separators
+  sanitized = sanitized.replace(/^[_.-]+|[_.-]+$/g, "");
+  // Truncate to 64 characters
+  return sanitized.slice(0, 64);
+}
+
 function wpArgToJsonSchema(arg: WpArg): Record<string, unknown> {
   const schema: Record<string, unknown> = {};
 
@@ -158,13 +173,18 @@ export function buildInputSchema(
         continue;
       }
 
-      // If already added from a different endpoint, skip (first wins)
-      if (properties[argName]) continue;
+      // Sanitize property key to match API requirements
+      const safeKey = VALID_PROPERTY_KEY.test(argName)
+        ? argName
+        : sanitizePropertyKey(argName);
 
-      properties[argName] = wpArgToJsonSchema(argDef);
+      // Skip if sanitization produced an empty key or collision
+      if (!safeKey || properties[safeKey]) continue;
+
+      properties[safeKey] = wpArgToJsonSchema(argDef);
 
       if (argDef.required) {
-        required.push(argName);
+        required.push(safeKey);
       }
     }
   }

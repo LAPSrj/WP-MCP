@@ -33,23 +33,67 @@ async function main() {
   }
   console.error(`Discovered ${tools.length} tools`);
 
-  const toolMap = new Map(tools.map((t) => [t.name, t]));
+  let toolMap = new Map(tools.map((t) => [t.name, t]));
 
   const server = new Server(
     { name: "wp-mcp", version: "1.0.0" },
-    { capabilities: { tools: {} } }
+    { capabilities: { tools: { listChanged: true } } }
   );
 
+  async function refreshTools(): Promise<number> {
+    const newTools = await discoverTools(config, client);
+    tools = newTools;
+    toolMap = new Map(newTools.map((t) => [t.name, t]));
+    console.error(`Refreshed: ${newTools.length} tools`);
+    await server.sendToolListChanged();
+    return newTools.length;
+  }
+
+  const refreshToolDef = {
+    name: "refresh_tools",
+    description:
+      "Re-discover all WordPress REST API routes and update the tool list. Use this after registering new post types, installing plugins, or any change that adds/removes REST API endpoints.",
+    inputSchema: { type: "object" as const, properties: {} },
+  };
+
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema,
-    })),
+    tools: [
+      refreshToolDef,
+      ...tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })),
+    ],
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+
+    if (name === "refresh_tools") {
+      try {
+        const count = await refreshTools();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Refreshed tool list. Discovered ${count} tools.`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to refresh tools: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+
     const tool = toolMap.get(name);
 
     if (!tool) {
