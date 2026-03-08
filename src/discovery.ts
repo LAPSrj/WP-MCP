@@ -5,7 +5,9 @@ import {
   extractPathParams,
   buildToolName,
   buildToolDescription,
+  buildMinimalDescription,
   buildInputSchema,
+  stripSchemaDescriptions,
 } from "./tools.js";
 
 export async function discoverTools(
@@ -24,11 +26,14 @@ export async function discoverTools(
 
     const pathParams = extractPathParams(routePattern);
     const name = buildToolName(routePattern);
-    const description = buildToolDescription(
-      routePattern,
-      routeData.endpoints
-    );
-    const inputSchema = buildInputSchema(pathParams, routeData.endpoints);
+
+    const isMinimal = config.descriptionMode === "minimal";
+
+    const description = isMinimal
+      ? buildMinimalDescription(routePattern, routeData.endpoints)
+      : buildToolDescription(routePattern, routeData.endpoints);
+
+    let inputSchema = buildInputSchema(pathParams, routeData.endpoints);
 
     // Inject file_path parameter for media upload routes
     if (routePattern === "/wp/v2/media") {
@@ -53,6 +58,11 @@ export async function discoverTools(
             "ACF (Advanced Custom Fields) values to set. Pass an object with field names as keys, e.g. {\"field_name\": \"value\"}. For image fields, pass the attachment ID as an integer.",
         };
       }
+    }
+
+    // Strip property descriptions in minimal mode
+    if (isMinimal) {
+      inputSchema = stripSchemaDescriptions(inputSchema);
     }
 
     // Build method → endpoint lookup
@@ -83,5 +93,30 @@ export async function discoverTools(
     });
   }
 
-  return tools;
+  return applyToolFilter(config, tools);
+}
+
+function applyToolFilter(
+  config: Config,
+  tools: ToolDefinition[]
+): ToolDefinition[] {
+  if (config.toolMode === "all" || config.toolMode === "compact") {
+    return tools;
+  }
+
+  const patterns = config.toolFilter;
+  if (patterns.length === 0) return tools;
+
+  const matches = (tool: ToolDefinition): boolean => {
+    return patterns.some(
+      (p) => tool.name === p || tool.route === p || tool.route.startsWith(p)
+    );
+  };
+
+  if (config.toolMode === "allowlist") {
+    return tools.filter(matches);
+  }
+
+  // blocklist
+  return tools.filter((t) => !matches(t));
 }

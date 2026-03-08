@@ -31,7 +31,7 @@ async function main() {
     );
     process.exit(1);
   }
-  console.error(`Discovered ${tools.length} tools`);
+  console.error(`Discovered ${tools.length} tools (mode: ${config.toolMode}, descriptions: ${config.descriptionMode})`);
 
   let toolMap = new Map(tools.map((t) => [t.name, t]));
 
@@ -56,16 +56,56 @@ async function main() {
     inputSchema: { type: "object" as const, properties: {} },
   };
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      refreshToolDef,
-      ...tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      })),
-    ],
-  }));
+  // Compact mode: single wp_api tool that takes method, path, params
+  const compactToolDef = {
+    name: "wp_api",
+    description:
+      "Universal WordPress REST API tool. Accepts any REST API path and parameters. Use refresh_tools to discover available routes.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        method: {
+          type: "string",
+          enum: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+          description: "HTTP method",
+        },
+        path: {
+          type: "string",
+          description:
+            "REST API path, e.g. /wp/v2/posts or /wp/v2/posts/123",
+        },
+        params: {
+          type: "object",
+          description: "Query parameters (GET) or body parameters (POST/PUT/PATCH/DELETE)",
+        },
+        file_path: {
+          type: "string",
+          description:
+            "Absolute path to a local file to upload (for media endpoints with POST)",
+        },
+      },
+      required: ["method", "path"],
+    },
+  };
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (config.toolMode === "compact") {
+      return {
+        tools: [refreshToolDef, compactToolDef],
+      };
+    }
+
+    return {
+      tools: [
+        refreshToolDef,
+        ...tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        })),
+      ],
+    };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
@@ -92,6 +132,11 @@ async function main() {
           isError: true,
         };
       }
+    }
+
+    // Handle compact mode wp_api tool
+    if (name === "wp_api") {
+      return handleCompactCall(client, config.wpUrl, args as Record<string, unknown> || {});
     }
 
     const tool = toolMap.get(name);
@@ -180,6 +225,66 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("wp-mcp server running");
+}
+
+async function handleCompactCall(
+  client: WpClient,
+  wpUrl: string,
+  args: Record<string, unknown>
+): Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }> {
+  const method = String(args.method || "GET").toUpperCase();
+  const path = args.path as string | undefined;
+
+  if (!path) {
+    return {
+      content: [{ type: "text" as const, text: "Missing required parameter: path" }],
+      isError: true,
+    };
+  }
+
+  const url = `${wpUrl}/wp-json${path.startsWith("/") ? path : `/${path}`}`;
+  const params = (args.params || {}) as Record<string, unknown>;
+  const filePath = args.file_path as string | undefined;
+
+  try {
+    // Handle file uploads
+    if (filePath && method === "POST") {
+      const result = await client.uploadFile(
+        url,
+        filePath,
+        Object.keys(params).length > 0 ? params : undefined
+      );
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        ],
+      };
+    }
+
+    const hasParams = Object.keys(params).length > 0;
+    const result = await client.request(
+      method,
+      url,
+      method === "GET" ? undefined : hasParams ? params : undefined,
+      method === "GET" ? (hasParams ? params : undefined) : undefined
+    );
+
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+      isError: true,
+    };
+  }
 }
 
 main().catch((error) => {

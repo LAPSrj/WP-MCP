@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { WpArg, WpEndpoint } from "./types.js";
 
 const WP_CORE_PREFIX = "wp/v2/";
@@ -24,7 +25,28 @@ export function buildToolName(routePattern: string): string {
     name = name.slice("wp.v2.".length);
   }
 
-  return name.slice(0, 128);
+  // Enforce 64-char limit with intelligent shortening
+  if (name.length <= 64) return name;
+
+  // Try stripping wp- or wp_ prefix from non-core namespaces
+  const stripped = name.replace(/^wp[-_]/, "");
+  if (stripped.length <= 64) return stripped;
+
+  // Keep first two + last two segments
+  const segments = name.split(".");
+  if (segments.length > 4) {
+    const short = `${segments[0]}.${segments[1]}..${segments[segments.length - 2]}.${segments[segments.length - 1]}`;
+    if (short.length <= 64) return short;
+  }
+
+  // Last resort: head_[6-char-hash]_tail for uniqueness
+  const hash = createHash("md5").update(name).digest("hex").slice(0, 6);
+  const head = segments.slice(0, 2).join(".");
+  const tail = segments.slice(-1)[0];
+  const hashed = `${head}_${hash}_${tail}`;
+  if (hashed.length <= 64) return hashed;
+
+  return name.slice(0, 64);
 }
 
 export function buildToolDescription(
@@ -194,6 +216,49 @@ export function buildInputSchema(
     properties,
     required: required.length > 0 ? required : undefined,
   };
+}
+
+export function buildMinimalDescription(
+  routePattern: string,
+  endpoints: WpEndpoint[]
+): string {
+  const seenMethods = new Set<string>();
+  for (const endpoint of endpoints) {
+    for (const method of endpoint.methods) {
+      seenMethods.add(method);
+    }
+  }
+
+  // Collect all parameter names
+  const paramNames = new Set<string>();
+  for (const endpoint of endpoints) {
+    for (const argName of Object.keys(endpoint.args)) {
+      paramNames.add(argName);
+    }
+  }
+
+  const methods = Array.from(seenMethods).join(", ");
+  const params = Array.from(paramNames);
+  const paramStr = params.length > 0 ? ` — Params: ${params.join(", ")}` : "";
+  return `${routePattern} [${methods}]${paramStr}`;
+}
+
+export function stripSchemaDescriptions(
+  inputSchema: Record<string, unknown>
+): Record<string, unknown> {
+  const schema = { ...inputSchema };
+  const properties = schema.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  if (!properties) return schema;
+
+  const strippedProps: Record<string, Record<string, unknown>> = {};
+  for (const [key, value] of Object.entries(properties)) {
+    const { description: _, ...rest } = value;
+    strippedProps[key] = rest;
+  }
+  schema.properties = strippedProps;
+  return schema;
 }
 
 export function buildUrl(
