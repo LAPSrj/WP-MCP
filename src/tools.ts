@@ -211,6 +211,13 @@ export function buildInputSchema(
     }
   }
 
+  // Inject _fields — WordPress global query param for field selection
+  properties["_fields"] = {
+    type: "string",
+    description:
+      "Comma-separated list of fields to include in the response (e.g. \"id,title,slug\"). Reduces response size.",
+  };
+
   return {
     type: "object",
     properties,

@@ -76,7 +76,8 @@ async function main() {
         },
         params: {
           type: "object",
-          description: "Query parameters (GET) or body parameters (POST/PUT/PATCH/DELETE)",
+          description:
+            "Query parameters (GET) or body parameters (POST/PUT/PATCH/DELETE). Include _fields to limit response fields (e.g. {\"_fields\": \"id,title,slug\"})",
         },
         file_path: {
           type: "string",
@@ -191,7 +192,7 @@ async function main() {
         );
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+            { type: "text" as const, text: JSON.stringify(result) },
           ],
         };
       }
@@ -206,7 +207,7 @@ async function main() {
 
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          { type: "text" as const, text: JSON.stringify(result) },
         ],
       };
     } catch (error) {
@@ -256,7 +257,7 @@ async function handleCompactCall(
       );
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          { type: "text" as const, text: JSON.stringify(result) },
         ],
       };
     }
@@ -271,7 +272,7 @@ async function handleCompactCall(
 
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   } catch (error) {
