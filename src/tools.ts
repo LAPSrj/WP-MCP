@@ -218,6 +218,35 @@ export function buildInputSchema(
       "Comma-separated list of fields to include in the response (e.g. \"id,title,slug\"). Reduces response size.",
   };
 
+  // Inject _save_response — save response to file instead of returning inline
+  properties["_save_response"] = {
+    type: "string",
+    description:
+      "File path to save the response to instead of returning it inline. Returns a compact summary with file path and size. Useful for large responses that would fill the context window.",
+  };
+  properties["_save_response_field"] = {
+    type: "string",
+    description:
+      "Dot-notation field path to extract before saving (e.g. \"content.rendered\"). Only the extracted value is written to the file. Used with _save_response.",
+  };
+
+  // Inject _file_params and _body_file for endpoints that support writes
+  const hasWriteMethods = endpoints.some((ep) =>
+    ep.methods.some((m) => ["POST", "PUT", "PATCH", "DELETE"].includes(m))
+  );
+  if (hasWriteMethods) {
+    properties["_file_params"] = {
+      type: "object",
+      description:
+        "Map of parameter names to file paths. Each file is read and its contents used as the string value for that parameter. E.g. {\"content\": \"/tmp/page.html\", \"excerpt\": \"/tmp/excerpt.txt\"}. Avoids sending large content inline.",
+    };
+    properties["_body_file"] = {
+      type: "string",
+      description:
+        "Path to a JSON file whose contents are parsed and merged into the request body. Explicit parameters and _file_params take precedence over values from this file.",
+    };
+  }
+
   return {
     type: "object",
     properties,
